@@ -5,6 +5,7 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.shared.filtering.PropertyUtils;
 
 import javax.script.Invocable;
 import javax.script.ScriptEngine;
@@ -17,6 +18,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -40,7 +43,10 @@ public class ErbMojo extends AbstractMojo {
             + "end\n";
 
     @Parameter(name = "templateFile", required = true)
-    private File templateFile;
+    private String templateFile;
+
+    @Parameter(name = "erbVariablesFile", required = false)
+    private File erbVariablesFile;
 
     @Parameter(name = "propertiesFile", required = false)
     private File propertiesFile;
@@ -54,16 +60,21 @@ public class ErbMojo extends AbstractMojo {
     private InputStream templateInputStream;
     private OutputStream resultOutputStream;
     private ScriptEngine jruby;
+    private Properties erbVariables;
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
 
-        Map rbVariables = new HashMap<>();
-        for (Map.Entry e : properties().entrySet()) {
-            rbVariables.put("@" + e.getKey(), e.getValue());
-        }
-
         try {
+            Map rbVariables = new HashMap<>();
+            for (Map.Entry e : erbVariables().entrySet()) {
+                String key = e.getKey().toString();
+                if (!key.startsWith("@")) {
+                    key = "@" + key;
+                }
+                rbVariables.put(key, e.getValue());
+            }
+
             String result = jruby().invokeFunction("render", templateInputStream(), rbVariables).toString();
 
             OutputStream outputStream = resultOutputStream();
@@ -87,23 +98,31 @@ public class ErbMojo extends AbstractMojo {
         return (Invocable) jruby;
     }
 
-    private InputStream templateInputStream() {
+    private InputStream templateInputStream() throws IOException {
         if (templateInputStream != null) {
             return templateInputStream;
         }
 
         try {
+            return new URL(templateFile).openStream();
+        } catch (MalformedURLException e) {
             return templateInputStream = new FileInputStream(templateFile);
-        } catch (FileNotFoundException e) {
-            throw new RuntimeException(e);
         }
     }
 
-    private Properties properties() {
-        Properties answer = new Properties();
+    private Properties erbVariables() throws IOException {
+        if (erbVariables != null) {
+            return erbVariables;
+        }
+
+        if (erbVariablesFile == null) {
+            return new Properties();
+        }
+
+        Properties baseProperties = new Properties();
         if (propertiesFile != null) {
             try {
-                answer.load(new FileInputStream(propertiesFile));
+                baseProperties.load(new FileInputStream(propertiesFile));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -111,16 +130,28 @@ public class ErbMojo extends AbstractMojo {
 
         if (properties != null) {
             for (Map.Entry e : properties.entrySet()) {
-                answer.put(e.getKey(), e.getValue());
+                baseProperties.put(e.getKey(), e.getValue());
             }
         }
 
-        return answer;
+        for (Map.Entry e : System.getProperties().entrySet()) {
+            baseProperties.put(e.getKey(), e.getValue());
+        }
+
+        return PropertyUtils.loadPropertyFile(erbVariablesFile, baseProperties);
     }
 
     private OutputStream resultOutputStream() {
         if (resultOutputStream != null) {
             return resultOutputStream;
+        }
+
+        if (outputFile == null) {
+            return System.out;
+        }
+
+        if (!outputFile.getParentFile().exists()) {
+            outputFile.getParentFile().mkdirs();
         }
 
         try {
@@ -130,12 +161,12 @@ public class ErbMojo extends AbstractMojo {
         }
     }
 
-    Map<String, String> getProperties() {
-        return properties;
+    Properties getErbVariables() {
+        return erbVariables;
     }
 
-    void setProperties(Map<String, String> props) {
-        this.properties = props;
+    void setErbVariables(Properties erbVariables) {
+        this.erbVariables = erbVariables;
     }
 
     public InputStream getTemplateInputStream() {

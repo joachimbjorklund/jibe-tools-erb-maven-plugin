@@ -8,8 +8,7 @@ import org.junit.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Properties;
 
 /**
  *
@@ -23,9 +22,9 @@ public class ErbMojoTest {
         erbMojo.setResultOutputStream(new ByteArrayOutputStream());
         erbMojo.setTemplateInputStream(getTestTemplate());
 
-        Map properties = new HashMap();
+        Properties properties = new Properties();
         properties.put("foo", "bar");
-        erbMojo.setProperties(properties);
+        erbMojo.setErbVariables(properties);
     }
 
     @Test
@@ -37,7 +36,7 @@ public class ErbMojoTest {
 
     @Test(expected = MojoExecutionException.class)
     public void testMojoMissingProp() throws Exception {
-        erbMojo.getProperties().remove("foo");
+        erbMojo.getErbVariables().remove("foo");
         erbMojo.execute();
     }
 
