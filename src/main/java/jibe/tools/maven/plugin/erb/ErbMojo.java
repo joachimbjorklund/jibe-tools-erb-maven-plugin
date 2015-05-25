@@ -57,6 +57,9 @@ public class ErbMojo extends AbstractMojo {
     @Parameter(name = "outputFile", required = false)
     private File outputFile;
 
+    @Parameter(name = "skip", required = false)
+    private boolean skip;
+
     private InputStream templateInputStream;
     private OutputStream resultOutputStream;
     private ScriptEngine jruby;
@@ -64,6 +67,10 @@ public class ErbMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
+        if (skip) {
+            getLog().info("execution skipped");
+            return;
+        }
 
         try {
             Map rbVariables = new HashMap<>();
