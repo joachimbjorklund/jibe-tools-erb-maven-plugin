@@ -7,6 +7,12 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.shared.filtering.PropertyUtils;
 
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import javax.script.Invocable;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
@@ -18,8 +24,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.MalformedURLException;
 import java.net.URL;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -43,7 +50,7 @@ public class ErbMojo extends AbstractMojo {
             + "end\n";
 
     @Parameter(name = "templateFile", required = true)
-    private String templateFile;
+    private URL templateFile;
 
     @Parameter(name = "erbVariablesFile", required = false)
     private File erbVariablesFile;
@@ -56,6 +63,9 @@ public class ErbMojo extends AbstractMojo {
 
     @Parameter(name = "outputFile", required = false)
     private File outputFile;
+
+    @Parameter(name = "sslTrustAllServers", required = false)
+    private boolean sslTrustAllServers;
 
     @Parameter(name = "skip", required = false)
     private boolean skip;
@@ -110,11 +120,11 @@ public class ErbMojo extends AbstractMojo {
             return templateInputStream;
         }
 
-        try {
-            return new URL(templateFile).openStream();
-        } catch (MalformedURLException e) {
-            return templateInputStream = new FileInputStream(templateFile);
+        if (templateFile.getProtocol().equals("https") && sslTrustAllServers) {
+            sslAllTrusted();
         }
+
+        return templateFile.openStream();
     }
 
     private Properties erbVariables() throws IOException {
@@ -190,5 +200,40 @@ public class ErbMojo extends AbstractMojo {
 
     void setResultOutputStream(OutputStream resultOutputStream) {
         this.resultOutputStream = resultOutputStream;
+    }
+
+    private void sslAllTrusted() {
+        TrustManager[] trustAllCerts = new TrustManager[]{
+                new X509TrustManager() {
+                    public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                        return null;
+                    }
+
+                    public void checkClientTrusted(X509Certificate[] certs, String authType) {
+                    }
+
+                    public void checkServerTrusted(X509Certificate[] certs, String authType) {
+                    }
+                }
+        };
+
+        // Install the all-trusting trust manager
+        final SSLContext sc;
+        try {
+            sc = SSLContext.getInstance("SSL");
+            sc.init(null, trustAllCerts, new SecureRandom());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+        // Create all-trusting host name verifier
+        HostnameVerifier allHostsValid = new HostnameVerifier() {
+            public boolean verify(String hostname, SSLSession session) {
+                return true;
+            }
+        };
+
+        // Install the all-trusting host verifier
+        HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
     }
 }
